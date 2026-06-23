@@ -27,5 +27,12 @@ DEFAULTS = {
     'server': {
         'host': '127.0.0.1',
         'port': '12357'
+    },
+    'autopause': {
+        'enabled': True,
+        'default_idle_minutes': '30',
+        'keepalive_max_minutes': '1440',
+        'poll_interval_running': '20',
+        'poll_interval_paused': '5'
     }
 }
