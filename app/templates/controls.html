@@ -67,6 +67,15 @@
               </div>
             </div>
           {% endif %}
+          {% if show_ark_settings is defined and show_ark_settings %}
+            <div class="col">
+              <div class="text-center">
+                <a href="{{ url_for('main.ark_settings', server_id=server_id) }}" role="button" class="text-center btn btn-outline-warning">
+                  ARK Server Settings
+                </a>
+              </div>
+            </div>
+          {% endif %}
           </div>
         </div>
 

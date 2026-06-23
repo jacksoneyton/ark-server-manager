@@ -460,3 +460,15 @@ class JobsForm(FlaskForm):
     )
 
     job_id = HiddenField("Job ID")
+
+
+class ArkSettingsForm(FlaskForm):
+    """Minimal form used solely for CSRF token generation on the ARK settings page.
+
+    All field values are read directly from request.form in the route handler
+    so we can build a flexible UI without defining every INI key in WTForms.
+    """
+    submit = SubmitField(
+        "Save ARK Settings",
+        render_kw={"class": "btn btn-success btn-lg px-5"},
+    )

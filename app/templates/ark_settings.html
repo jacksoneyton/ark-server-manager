@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}ARK Settings — {{ server_name|capitalize }}{% endblock %}
+
+{% block content %}
+<br />
+
+{# ── Server-running warning banner ────────────────────────────────────────── #}
+{% if server_running %}
+<div class="alert alert-warning alert-dismissible fade show d-flex align-items-center mb-3" role="alert">
+  <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+  <div>
+    <strong>Server is currently running!</strong>
+    ARK overwrites <code>.ini</code> files on a clean shutdown — changes saved
+    now <em>may be lost</em>.  Stop the server first for persistent changes.
+  </div>
+  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="container-fluid bg-dark border border-secondary rounded-3 p-0 mb-3" style="overflow:hidden;">
+  <div class="d-flex align-items-center justify-content-between p-3"
+       style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
+              border-bottom:2px solid #e94560;">
+    <div>
+      <h2 class="text-white mb-0 fw-bold">
+        <i class="bi bi-gear-fill me-2" style="color:#e94560;"></i>ARK Settings &mdash; {{ server_name|capitalize }}
+      </h2>
+      <small class="text-secondary">
+        Editing <code class="text-info">GameUserSettings.ini</code> &amp;
+        <code class="text-info">Game.ini</code> &mdash;
+        backups are created automatically on every save.
+      </small>
+    </div>
+    <a href="{{ url_for('main.controls', server_id=server_id) }}"
+       class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Back to Controls
+    </a>
+  </div>
+</div>
+
+{# ── Main form ────────────────────────────────────────────────────────────── #}
+<form method="POST" id="ark-settings-form">
+  {{ form.hidden_tag() }}
+  <input type="hidden" name="server_id" value="{{ server_id }}">
+
+  <div class="container-fluid bg-dark border border-secondary rounded-3 p-3">
+
+    {# ── Tab navigation (generated from schema) ───────────────────────────── #}
+    <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" id="arkTabs" role="tablist"
+        style="scrollbar-width:thin;">
+      {% for tab in schema %}
+      <li class="nav-item flex-shrink-0" role="presentation">
+        <button class="nav-link text-white {% if loop.first %}active{% endif %}"
+                id="tab-btn-{{ tab.id }}"
+                data-bs-toggle="tab"
+                data-bs-target="#tab-{{ tab.id }}"
+                type="button" role="tab">
+          <i class="bi {{ tab.icon }} me-1"></i>{{ tab.label }}
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
+
+    {# ── Tab panes (generated from schema) ────────────────────────────────── #}
+    <div class="tab-content" id="arkTabContent">
+      {% for tab in schema %}
+      <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+           id="tab-{{ tab.id }}" role="tabpanel">
+
+        {# Separate booleans from numeric/str fields for layout purposes #}
+        {% set bool_fields = tab.fields | selectattr("type", "equalto", "bool") | list %}
+        {% set value_fields = tab.fields | rejectattr("type", "equalto", "bool") | list %}
+
+        {# ── Numeric / string fields ── #}
+        {% if value_fields %}
+        <div class="row g-3 mb-4">
+          {% for field in value_fields %}
+          <div class="col-md-6">
+            <label class="form-label text-light fw-semibold mb-1" for="{{ field.key }}">
+              {{ field.label }}
+            </label>
+
+            {% if field.input_type is defined and field.input_type == "password" %}
+            {# Password field with visibility toggle #}
+            <div class="input-group">
+              <input type="password"
+                     class="form-control bg-dark text-light border-secondary"
+                     id="{{ field.key }}" name="{{ field.key }}"
+                     value="{{ settings[field.key] }}"
+                     autocomplete="new-password"
+                     placeholder="{% if field.key == 'ServerPassword' %}Leave blank for public server{% endif %}">
+              <button class="btn btn-outline-secondary" type="button"
+                      onclick="togglePassword('{{ field.key }}', this)"
+                      title="Show / hide">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+
+            {% elif field.type in ["float", "int"] %}
+            {# Number input with linked range slider #}
+            <div class="d-flex gap-2 align-items-center">
+              <input type="number"
+                     class="form-control bg-dark text-light border-secondary"
+                     style="max-width:120px;"
+                     id="{{ field.key }}" name="{{ field.key }}"
+                     value="{{ settings[field.key] }}"
+                     min="{{ field.min }}"
+                     max="{{ field.max }}"
+                     step="{{ field.step }}">
+              <input type="range" class="form-range flex-grow-1"
+                     id="slider-{{ field.key }}"
+                     min="{{ field.min }}"
+                     max="{{ field.slider_max if field.slider_max is defined else field.max }}"
+                     step="{{ field.step }}"
+                     value="{{ settings[field.key] }}"
+                     oninput="syncFromSlider('{{ field.key }}', this.value)">
+              <button type="button"
+                      class="btn btn-outline-secondary btn-sm"
+                      onclick="resetField('{{ field.key }}', '{{ field.default }}')"
+                      title="Reset to default ({{ field.default }})">
+                <i class="bi bi-arrow-counterclockwise"></i>
+              </button>
+            </div>
+
+            {% else %}
+            {# Plain text input #}
+            <input type="text"
+                   class="form-control bg-dark text-light border-secondary"
+                   id="{{ field.key }}" name="{{ field.key }}"
+                   value="{{ settings[field.key] }}"
+                   placeholder="{{ field.default }}">
+            {% endif %}
+
+            <div class="form-text text-secondary mt-1" style="font-size:0.78rem;">
+              {{ field.help }}
+              <span class="text-muted ms-1">
+                (<code class="text-info" style="font-size:0.75rem;">{{ field.key }}</code>
+                {% if field.file == "gi" %}<span class="badge bg-secondary ms-1" style="font-size:0.65rem;">Game.ini</span>{% endif %})
+              </span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {# ── Boolean toggle fields ── #}
+        {% if bool_fields %}
+        {% if value_fields %}<hr class="border-secondary my-3">{% endif %}
+        <div class="row g-3">
+          {% for field in bool_fields %}
+          <div class="col-md-6">
+            <div class="form-check form-switch bg-dark border border-secondary rounded-3 p-3"
+                 style="padding-left:3.5rem !important;">
+              <input class="form-check-input" type="checkbox"
+                     id="{{ field.key }}" name="{{ field.key }}"
+                     role="switch"
+                     {% if settings[field.key] %}checked{% endif %}>
+              <label class="form-check-label text-light fw-semibold"
+                     for="{{ field.key }}">{{ field.label }}</label>
+              <div class="form-text text-secondary mt-1" style="font-size:0.78rem;">
+                {{ field.help }}
+                <span class="text-muted ms-1">
+                  (<code class="text-info" style="font-size:0.75rem;">{{ field.key }}</code>)
+                </span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+      </div>{# /tab-pane #}
+      {% endfor %}
+    </div>{# /tab-content #}
+
+    {# ── Submit row ──────────────────────────────────────────────────────── #}
+    <hr class="border-secondary my-4">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      {{ form.submit() }}
+
+      {% if server_running %}
+      <span class="badge bg-danger fs-6 px-3 py-2">
+        <i class="bi bi-exclamation-triangle me-1"></i>Server is running
+      </span>
+      {% else %}
+      <span class="badge bg-success fs-6 px-3 py-2">
+        <i class="bi bi-check-circle me-1"></i>Server offline — safe to save
+      </span>
+      {% endif %}
+
+      <small class="text-secondary ms-auto">
+        <i class="bi bi-floppy me-1"></i>
+        Timestamped <code>.bak</code> copies are created before every save.
+      </small>
+    </div>
+
+  </div>{# /outer card #}
+</form>
+
+{# ── JavaScript ───────────────────────────────────────────────────────────── #}
+<script>
+  /* Sync number input → slider */
+  document.querySelectorAll("input[type='number']").forEach(function(input) {
+    var slider = document.getElementById("slider-" + input.id);
+    if (!slider) return;
+    input.addEventListener("input", function() {
+      slider.value = input.value;
+    });
+  });
+
+  /* Sync slider → number input */
+  function syncFromSlider(fieldId, val) {
+    var input = document.getElementById(fieldId);
+    if (input) input.value = val;
+  }
+
+  /* Reset a field to its schema default */
+  function resetField(fieldId, defaultVal) {
+    var input  = document.getElementById(fieldId);
+    var slider = document.getElementById("slider-" + fieldId);
+    if (input)  input.value  = defaultVal;
+    if (slider) slider.value = defaultVal;
+  }
+
+  /* Password visibility toggle */
+  function togglePassword(fieldId, btn) {
+    var field = document.getElementById(fieldId);
+    var icon  = btn.querySelector("i");
+    if (field.type === "password") {
+      field.type = "text";
+      icon.classList.replace("bi-eye", "bi-eye-slash");
+    } else {
+      field.type = "password";
+      icon.classList.replace("bi-eye-slash", "bi-eye");
+    }
+  }
+
+  /* Highlight active tab */
+  document.querySelectorAll("#arkTabs button").forEach(function(btn) {
+    btn.addEventListener("shown.bs.tab", function() {
+      document.querySelectorAll("#arkTabs button").forEach(function(b) {
+        b.style.background   = "";
+        b.style.borderBottom = "";
+      });
+      btn.style.background   = "rgba(233,69,96,0.15)";
+      btn.style.borderBottom = "2px solid #e94560";
+    });
+  });
+
+  /* Warn before saving while server is running */
+  {% if server_running %}
+  document.getElementById("ark-settings-form").addEventListener("submit", function(e) {
+    if (!confirm(
+      "The ARK server is currently running.\n\n" +
+      "ARK overwrites .ini files on shutdown, which could discard these changes.\n\n" +
+      "Stop the server first for reliable results.\n\nSave anyway?"
+    )) { e.preventDefault(); }
+  });
+  {% endif %}
+</script>
+
+{% endblock %}

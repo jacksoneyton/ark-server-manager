@@ -13,6 +13,7 @@ from app.utils import *
 from app.models import GameServer
 from app.forms.views import ValidateID, SendCommandForm, ServerControlForm, SelectCfgForm
 from app.services import Controls, UserModuleService, ProcInfoRegistry, CommandExecutor, TmuxSocketNameCache, ServerPowerState, SudoersService
+from app.services.ark_ini_manager import ark_cfg_dir
 from app.managers import CfgManager
 from app import cache
 
@@ -108,12 +109,15 @@ def controls():
         current_app.logger.info(log_wrap("cfg_paths", cfg_paths))
         current_app.logger.info(log_wrap("controls_list", controls_list))
 
+        show_ark_settings = os.path.isdir(ark_cfg_dir(server.install_path))
+
         return render_template(
             "controls.html",
             user=current_user,
             server_id=server_id,
             server_name=server.install_name,
             show_jobs_edit=jobs_edit,
+            show_ark_settings=show_ark_settings,
             server_controls=controls_list,
             _config=config,
             cfg_paths=cfg_paths,
@@ -198,6 +202,7 @@ def controls():
             server_id=server_id,
             server_name=server.install_name,
             server_controls=controls_list,
+            show_ark_settings=os.path.isdir(ark_cfg_dir(server.install_path)),
             _config=config,
             cfg_paths=cfg_paths,
             select_cfg_form=select_cfg_form,

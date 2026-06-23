@@ -21,3 +21,4 @@ docker-compose.yml
 main.conf.local
 .coverage
 coverage.xml
+.secret
