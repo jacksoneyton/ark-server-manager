@@ -18,6 +18,7 @@ import ark_autopause as ap
 from ark_autopause import (
     AUTOPAUSE_DEFAULTS,
     KEEPALIVE_RE,
+    WIPEDINOS_RE,
     PAUSED,
     RUNNING,
     AutopauseDaemon,
@@ -206,6 +207,20 @@ class TestKeepaliveRegex(unittest.TestCase):
         self.assertIsNone(KEEPALIVE_RE.search("hello world"))
 
 
+class TestWipeDinosRegex(unittest.TestCase):
+
+    def test_matches_basic(self):
+        self.assertIsNotNone(WIPEDINOS_RE.search("Alice: !wipedinos"))
+
+    def test_case_insensitive(self):
+        self.assertIsNotNone(WIPEDINOS_RE.search("!WIPEDINOS"))
+        self.assertIsNotNone(WIPEDINOS_RE.search("!WipeDinos"))
+
+    def test_no_match_in_unrelated_text(self):
+        self.assertIsNone(WIPEDINOS_RE.search("hello world"))
+        self.assertIsNone(WIPEDINOS_RE.search("!keepalive 60"))
+
+
 # ---------------------------------------------------------------------------
 # load_autopause_config
 # ---------------------------------------------------------------------------
@@ -392,6 +407,45 @@ class TestAutopauseDaemonChat(unittest.TestCase):
             daemon._handle_chat(rcon, cfg)
         self.assertIsNone(daemon.state["pending_keepalive_minutes"])
         mock_save.assert_not_called()
+
+    def test_wipedinos_command_calls_wipe_method(self):
+        daemon = self._make_daemon()
+        cfg = {"keepalive_max_minutes": 1440, "default_idle_minutes": 30,
+               "poll_interval_running": 20, "poll_interval_paused": 5, "enabled": True}
+        rcon = MagicMock()
+        rcon.command.return_value = "Bob: !wipedinos"
+        with patch.object(daemon, "_wipe_dinos") as mock_wipe:
+            daemon._handle_chat(rcon, cfg)
+        mock_wipe.assert_called_once_with(rcon, "Bob")
+
+
+class TestWipeDinos(unittest.TestCase):
+
+    def _make_daemon(self):
+        with patch.object(ap, "load_state", return_value={
+            "pending_keepalive_minutes": None, "set_by": None, "set_at": None
+        }):
+            return AutopauseDaemon()
+
+    def test_wipe_sends_warning_then_command(self):
+        daemon = self._make_daemon()
+        rcon = MagicMock()
+        with patch.object(ap.time, "sleep"):
+            daemon._wipe_dinos(rcon, "Alice")
+        calls = [c[0][0] for c in rcon.command.call_args_list]
+        self.assertTrue(any("wiping" in c.lower() for c in calls))
+        self.assertIn("DestroyWildDinos", calls)
+        self.assertTrue(any("complete" in c.lower() for c in calls))
+
+    def test_wipe_logs_warning_on_rcon_error(self):
+        from ark_rcon import RconError
+        daemon = self._make_daemon()
+        rcon = MagicMock()
+        rcon.command.side_effect = RconError("timeout")
+        with patch.object(ap.logger, "warning") as mock_warn:
+            with patch.object(ap.time, "sleep"):
+                daemon._wipe_dinos(rcon, "Alice")
+        mock_warn.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -77,6 +77,7 @@ JOIN_MESSAGE = (
 )
 
 KEEPALIVE_RE = re.compile(r"!keepalive\s+(\d+)", re.IGNORECASE)
+WIPEDINOS_RE = re.compile(r"!wipedinos", re.IGNORECASE)
 PLAYER_LINE_RE = re.compile(r"^\s*\d+\.\s*(.+?),\s*(\S+)\s*$")
 
 RUNNING = "RUNNING"
@@ -377,6 +378,9 @@ class AutopauseDaemon:
             return
         cap = cfg["keepalive_max_minutes"]
         for line in chat.splitlines():
+            if WIPEDINOS_RE.search(line):
+                self._wipe_dinos(rcon, parse_chat_sender(line))
+                continue
             m = KEEPALIVE_RE.search(line)
             if not m:
                 continue
@@ -398,6 +402,19 @@ class AutopauseDaemon:
                 )
             except RconError as exc:
                 logger.warning("Failed to send keepalive confirmation: %s", exc)
+
+    def _wipe_dinos(self, rcon, sender):
+        logger.info("%s triggered !wipedinos via chat.", sender)
+        try:
+            rcon.command(
+                f"ServerChat {sender} is wiping all wild dinos in 10 seconds..."
+            )
+            time.sleep(10)
+            rcon.command("DestroyWildDinos")
+            rcon.command("ServerChat Wild dino wipe complete.")
+            logger.info("Wild dino wipe complete (triggered by %s).", sender)
+        except RconError as exc:
+            logger.warning("Failed to complete wild dino wipe: %s", exc)
 
     def _pause(self, proc, reason):
         try:
